@@ -1,0 +1,27 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.prisma = exports.prismaClientOptions = void 0;
+const client_1 = require("@prisma/client");
+// Prisma v7+ moved datasource URL configuration out of schema files.
+// This file provides a centralized config point.
+//
+// Assumptions:
+// - DATABASE_URL is set in the environment.
+// - migrations will create/update the schema based on prisma/schema.prisma.
+// Exporting Prisma client options is enough for Prisma CLI to detect config
+// in many setups; but since this repo uses the standard Prisma CLI, we only
+// need this file to exist and be valid TS.
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) {
+    // Fail fast; CLI will also fail when env is missing.
+    // eslint-disable-next-line no-console
+    console.error('DATABASE_URL is not set');
+}
+exports.prismaClientOptions = {
+    datasources: {
+        db: {
+            url: databaseUrl,
+        },
+    },
+};
+exports.prisma = new client_1.PrismaClient(exports.prismaClientOptions);

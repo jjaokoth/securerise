@@ -1,0 +1,317 @@
+openapi: 3.0.3
+info:
+  title: Securerise Public API Gateway
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+      description: Tenant API key used to authenticate calls to Securerise.
+
+  schemas:
+    Status:
+      type: string
+      description: >-
+        The lifecycle state of a payout handshake.
+
+        Notes:
+        - `LOCKED` means the handshake is accepted and the system awaits proof-of-delivery verification.
+        - `RELEASED` means proof-of-delivery was verified with sufficient confidence and the payout was processed.
+        - `DISPUTED` means proof-of-delivery could not be verified reliably; the provider should treat it as an audit/dispute event.
+        - `FAILED` means the handshake will not be released (e.g., AI confidence too low, missing/invalid data, or execution error).
+      enum:
+        - LOCKED
+        - RELEASED
+        - DISPUTED
+        - FAILED
+
+    Handshake:
+      type: object
+      description: >-
+        A universal escrow payout handshake representing an immutable intent to pay a recipient over one of Securerise's supported rails.
+
+        Handshakes start in `LOCKED` state and transition based on proof-of-delivery verification.
+
+        Amounts are stored as integer cents (fixed-point) to avoid float drift. Providers must treat these as strings
+        when working with JavaScript to prevent precision loss.
+      required:
+        - handshakeId
+        - route
+        - status
+        - aiConfidence
+        - amountKESCents
+        - amountUSDCents
+        - exchangeRateKESPerUSDC
+        - mpesaB2CRecipient
+        - pesaLinkRecipient
+        - circleRecipient
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Database primary key.
+        handshakeId:
+          type: string
+          description: Public unique identifier for the handshake used in API calls.
+        route:
+          type: string
+          description: >-
+            The rail that will be used to release funds after successful verification.
+          enum:
+            - MPESA
+            - BANK
+            - USDC
+        status:
+          $ref: '#/components/schemas/Status'
+        aiConfidence:
+          type: number
+          format: double
+          nullable: true
+          description: >-
+            AI confidence score in the range [0, 1].
+            - Higher scores indicate the submitted image is likely genuine proof-of-delivery.
+            - Release requires passing the service's configured threshold (currently > 0.95 in code).
+        failureReason:
+          type: string
+          nullable: true
+          description: >-
+            Human/diagnostic failure text describing why the handshake transitioned to `FAILED` or `DISPUTED`.
+            May be truncated to avoid leaking excessive model output.
+        amountKESCents:
+          type: string
+          description: KES amount in cents as a stringified integer.
+          example: "125000"
+        amountUSDCents:
+          type: string
+          description: USDC amount in cents as a stringified integer.
+          example: "9000"
+        exchangeRateKESPerUSDC:
+          type: string
+          description: KES cents per USDC cent, fixed-point as a stringified integer.
+          example: "13888"
+        mpesaB2CRecipient:
+          type: string
+          nullable: true
+          description: Recipient identifier for MPESA B2C (typically an MSISDN/phone number).
+        pesaLinkRecipient:
+          type: string
+          nullable: true
+          description: Recipient identifier for PesaLink/BANK rail.
+        circleRecipient:
+          type: string
+          nullable: true
+          description: Recipient identifier for USDC/Circle rail.
+        processedReleaseTxId:
+          type: string
+          nullable: true
+          description: >-
+            Idempotency token representing the unique release execution.
+            Used to prevent double-release under concurrent processing.
+        releasedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp when the handshake transitioned to `RELEASED`.
+        handshakeMetadata:
+          type: object
+          additionalProperties: true
+          description: >-
+            Opaque metadata supplied by the provider. It is used by the AI proof-of-delivery verifier
+            to check identifier consistency (e.g., order references, names, serial numbers).
+        createdAt:
+          type: string
+          format: date-time
+          description: Record creation timestamp.
+        updatedAt:
+          type: string
+          format: date-time
+          description: Record last update timestamp.
+
+    HandshakeCreateRequest:
+      type: object
+      required:
+        - route
+        - amountKESCents
+        - amountUSDCents
+        - exchangeRateKESPerUSDC
+        - handshakeMetadata
+      properties:
+        route:
+          type: string
+          enum: [MPESA, BANK, USDC]
+          description: Desired payout rail.
+        amountKESCents:
+          type: string
+          description: >-
+            KES amount in cents as a stringified integer.
+            Example: "125000" represents KES 1,250.00.
+        amountUSDCents:
+          type: string
+          description: USDC amount in cents as a stringified integer.
+        exchangeRateKESPerUSDC:
+          type: string
+          description: >-
+            KES cents per USDC cent as a stringified integer.
+            Used to compute fixed-point conversions during release.
+        mpesaB2CRecipient:
+          type: string
+          nullable: true
+          description: MPESA B2C recipient (MSISDN/phone number).
+        pesaLinkRecipient:
+          type: string
+          nullable: true
+          description: PesaLink/BANK recipient.
+        circleRecipient:
+          type: string
+          nullable: true
+          description: Circle/USDC recipient.
+        handshakeMetadata:
+          type: object
+          additionalProperties: true
+          description: Provider-supplied metadata used to verify image/identity consistency.
+      example:
+        route: MPESA
+        amountKESCents: "125000"
+        amountUSDCents: "9000"
+        exchangeRateKESPerUSDC: "13888"
+        mpesaB2CRecipient: "254700000000"
+        handshakeMetadata:
+          orderReference: "ORD-98321"
+          recipientName: "John Doe"
+
+    HandshakeCreateResponse:
+      type: object
+      description: >-
+        Response returned after creating a handshake.
+        The handshake should begin in `OPEN`/`LOCKED` state pending proof-of-delivery.
+      required:
+        - handshakeId
+        - status
+      properties:
+        handshakeId:
+          type: string
+          description: Unique handshake identifier to be used for verification and status polling.
+        status:
+          type: string
+          description: Current semantic status returned by the API.
+        escrow_address:
+          type: string
+          description: Temporary escrow address generated for the handshake.
+        evidenceUploadUrl:
+          type: string
+          description: URL where proof-of-delivery evidence can be uploaded.
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Original handshake metadata returned for client reference.
+      example:
+        handshakeId: "hs_3f0b6d62"
+        status: OPEN
+        escrow_address: "escrow_abcdef123456"
+        evidenceUploadUrl: "/api/payout/handshakes/hs_3f0b6d62/verify-proof"
+        metadata:
+          orderReference: "ORD-98321"
+          recipientName: "John Doe"
+
+    Verification:
+      type: object
+      description: >-
+        Result produced by the AI proof-of-delivery verifier.
+      properties:
+        confidence_score:
+          type: number
+          format: double
+          description: Confidence in [0, 1].
+        reasoning:
+          type: string
+          description: Natural-language rationale for why the image is (or isn't) genuine.
+
+paths:
+  /v1/handshakes:
+    post:
+      summary: Create a universal escrow handshake
+      description: >-
+        Creates a new payout handshake in the Universal Trust Layer. The handshake is initially locked
+        and will only release funds once proof-of-delivery is verified.
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HandshakeCreateRequest'
+      responses:
+        '201':
+          description: Handshake successfully created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HandshakeCreateResponse'
+        '400':
+          description: Invalid request payload.
+        '401':
+          description: Missing or invalid API key.
+        '503':
+          description: Trust Layer unavailable.
+
+  /v1/handshakes/{id}/verify:
+    post:
+      summary: Submit proof-of-delivery for an existing handshake
+      description: >-
+        Uploads an image to the AI Vision verifier. If the asset matches the expected handshake metadata,
+        the handshake transitions to RELEASED; otherwise it is marked as FAILED.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Handshake identifier created by `POST /v1/handshakes`.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                image:
+                  type: string
+                  format: binary
+              required:
+                - image
+      responses:
+        '200':
+          description: Proof-of-delivery verification completed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verification:
+                    $ref: '#/components/schemas/Verification'
+                  mappedStatus:
+                    type: string
+                    enum:
+                      - RELEASED
+                      - FAILED
+                  statusLabel:
+                    type: string
+                    description: Semantic label for client-safe verification state.
+        '400':
+          description: Missing or invalid image upload.
+        '401':
+          description: Missing or invalid API key.
+        '403':
+          description: Tenant mismatch; requester cannot access this handshake.
+        '404':
+          description: Handshake not found.
