@@ -9,6 +9,9 @@
 
 import { PrismaClient, TenantStatus } from '@prisma/client';
 import crypto from 'crypto';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+declare const process: any;
+
 
 const prisma = new PrismaClient();
 
