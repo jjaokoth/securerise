@@ -8,17 +8,17 @@ Securerise empowers secure commercial exchange across logistics and financial co
 
 ## Project Roadmap
 
-### Phase 1: Handshake Core (Current)
+### Phase 1: Handshake Core (Completed)
 - OTP-based transaction intent capture
 - Escrow locking mechanism
 - Basic webhook integration for settlement
 
-### Phase 2: Hybrid-Trust Mobile App (In Progress)
+### Phase 2: Hybrid-Trust Mobile App (Completed)
 - Flutter-based cross-platform mobile app (Web, iOS, Android)
 - Safety Net UI: OTP input, camera PoD, GPS binding
 - AI-powered verification with multimodal analysis
 
-### Phase 3: Global Scaling
+### Phase 3: Global Scaling (In Progress)
 - Multi-region Cloud Run deployment
 - Enterprise API integrations
 - Advanced fraud detection and compliance features
@@ -70,6 +70,27 @@ npx prisma generate
 
 # Run locally
 npm run dev
+```
+
+## Mobile App Setup
+
+The Flutter mobile app is located in `securerise_mobile/`.
+
+```bash
+cd securerise_mobile
+
+# Install Flutter dependencies
+flutter pub get
+
+# Configure environment
+# Edit .env with your Cloud Run service URL and API key
+# API_BASE_URL=https://your-deployed-service-url.a.run.app
+# API_KEY=your_api_key
+
+# After Cloud Run deployment, update API_BASE_URL with the service URL from Google Cloud Console or GitHub Actions logs.
+
+# Run on device/emulator
+flutter run
 ```
 
 ## Google Cloud Run
