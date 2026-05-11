@@ -1,4 +1,16 @@
+/**
+ * © 2026 Securerise Solutions Limited
+ * Lead Architect: Joshua Joel A Okoth (securerise@outlook.com)
+ * 
+ * PROPRIETARY AND CONFIDENTIAL: This code is the intellectual property of 
+ * Securerise Solutions Limited. Unauthorized copying or distribution 
+ * is strictly prohibited under the CC BY-NC-ND 4.0 International License.
+ */
+
+
+
 import type { Request, Response, NextFunction } from 'express';
+
 
 export function internalApiKeyMiddleware(req: Request, res: Response, next: NextFunction) {
   const apiKey = req.header('x-api-key');
@@ -16,3 +28,4 @@ export function internalApiKeyMiddleware(req: Request, res: Response, next: Next
 }
 
 export default internalApiKeyMiddleware;
+

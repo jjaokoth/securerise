@@ -1,24 +1,31 @@
-import express from 'express';
+/**
+ * © 2026 Securerise Solutions Limited
+ * Lead Architect: Joshua Joel A Okoth (securerise@outlook.com)
+ * 
+ * PROPRIETARY AND CONFIDENTIAL: This code is the intellectual property of 
+ * Securerise Solutions Limited. Unauthorized copying or distribution 
+ * is strictly prohibited under the CC BY-NC-ND 4.0 International License.
+ */
+
+// Required: patch BigInt serialization early in the process.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
+};
+
 import { PrismaClient } from '@prisma/client';
 import { app } from './app';
-import apiRouter from './routes/api';
+
 
 export const prisma = new PrismaClient();
 
-// Middleware: tenant auth globally for /v1 prefix
-app.use('/v1', require('./middleware/tenant-auth').default);
-
-// Routing: handshake router mounted at /v1/handshakes
-app.use('/v1/handshakes', apiRouter);
-
 // Database Connection
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
 async function bootstrap(): Promise<void> {
   // Ensure Postgres engine is reachable before accepting traffic
   await prisma.$connect();
 
-  // Server
   app.listen(PORT, () => {
     console.log('Securerise Trust API Live on Parrot OS [Port 3000]');
   });
@@ -29,4 +36,5 @@ bootstrap().catch(async (err) => {
   await prisma.$disconnect();
   process.exit(1);
 });
+
 

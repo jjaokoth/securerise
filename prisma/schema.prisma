@@ -9,32 +9,35 @@ generator client {
   provider = "prisma-client-js"
 }
 
-model EscrowTransaction {
-  id                Int      @id @default(autoincrement())
-  sender            String
-  receiver          String
-  amount            Float
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  status            EscrowStatus
-  
-  userId            Int?
-  user              User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+// --- Hybrid-trust payment processor transaction ---
+model Transaction {
+  id            String            @id @default(uuid())
+  amount        BigInt
+  currency      String            @default("KES")
+  status        TransactionStatus
+  otpHandshake  String
+  safetyNetUrl  String?
+  metadata      Json?
+  channel       String
 }
 
-enum EscrowStatus {
+
+enum TransactionStatus {
   PENDING
-  COMPLETED
-  CANCELED
+  LOCKED
+  RELEASED
+  DISPUTED
 }
+
 
 model User {
   id                Int      @id @default(autoincrement())
   anonymousId       String   @unique
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
-  escrowTransactions EscrowTransaction[]
+  escrowTransactions Transaction[]
 }
+
 
 // --- Payout routing models ---
 
@@ -60,12 +63,26 @@ model PayoutHandshake {
   handshakeId            String                   @unique
   route                   PayoutRoute
 
-
-  // Pre-flight validated fields
+  // Double-layer verification state
   status                  PayoutHandshakeStatus
   aiConfidence            Float
 
-  // Accounting inputs (store as integers to avoid float drift; interpret based on decimals)
+  // --- Primary (OTP) verification ---
+  handshakeCodeHash      String?                 @db.Text // store hashed OTP only
+  otpMatchedAt            DateTime?
+  otpAttemptCount        Int                      @default(0)
+  otpLastAttemptAt       DateTime?
+
+  // --- Secondary (Safety Net) PoD binding ---
+  podPhotoUrlCiphertext  String?                 @db.Text
+  podPhotoUrlIv           String?                 @db.Text
+  podGpsCiphertext        String?                 @db.Text
+  podGpsIv                 String?                 @db.Text
+  podIntegrityHash        String?                 @unique // immutable proof-of-delivery integrity binding
+  podVerifiedAt           DateTime?
+  podUploadSuccessAt      DateTime?
+
+  // --- Accounting inputs (integer cents; bank-grade precision) ---
   amountKESCents         BigInt
   amountUSDCents         BigInt
   exchangeRateKESPerUSDC BigInt // fixed-point: KES cents per USDC cent
@@ -75,18 +92,21 @@ model PayoutHandshake {
   pesaLinkRecipient       String?
   circleRecipient         String?
 
-  // Idempotency and processing tracking
+  // Idempotency and atomic release tracking
+  releaseAttemptCount     Int                      @default(0)
+  releaseIdempotencyKey   String?                 @unique
   processedReleaseTxId    String?                 @unique
   releasedAt              DateTime?
   failureReason           String?
 
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
-  
+
   auditLogs               AuditLog[]
 
   @@index([tenantId, handshakeId])
 }
+
 
 enum VerificationTaskStatus {
   QUEUED

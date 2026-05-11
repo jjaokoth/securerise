@@ -7,15 +7,13 @@
  * is strictly prohibited under the CC BY-NC-ND 4.0 International License.
  */
 
-import type { Tenant } from '@prisma/client';
+import { Router } from 'express';
+import { PaymentController } from '../controllers/PaymentController';
 
-declare global {
-  namespace Express {
-    interface Request {
-      tenant?: Pick<Tenant, 'id' | 'name' | 'webhookSecret' | 'apiKey'>;
-    }
-  }
-}
+const router = Router();
+const controller = new PaymentController();
 
-export {};
+router.post('/create', (req, res) => controller.create(req, res));
+router.post('/verify', (req, res) => controller.verify(req, res));
 
+export default router;

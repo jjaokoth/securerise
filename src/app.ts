@@ -1,5 +1,16 @@
+/**
+ * © 2026 Securerise Solutions Limited
+ * Lead Architect: Joshua Joel A Okoth (securerise@outlook.com)
+ * 
+ * PROPRIETARY AND CONFIDENTIAL: This code is the intellectual property of 
+ * Securerise Solutions Limited. Unauthorized copying or distribution 
+ * is strictly prohibited under the CC BY-NC-ND 4.0 International License.
+ */
+
 import express from 'express';
+
 import cors from 'cors';
+
 import helmet from 'helmet';
 import { json } from 'body-parser';
 import privacyMiddleware from './middleware/privacyMiddleware';
@@ -10,8 +21,11 @@ import { PayoutController } from './controllers/payoutController';
 import { EscrowController } from './controllers/escrowController';
 import { EscrowService } from './services/escrowService';
 import { PayoutProofController } from './controllers/payoutProofController';
+import paymentApiRouter from './routes/paymentApi';
+import paymentRouter from './routes/paymentRoutes';
 
 export const app = express();
+
 
 // BigInt serialization polyfill (prevents JSON.stringify errors)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -22,9 +36,19 @@ export const app = express();
 // Middleware
 app.use(helmet());
 app.use(cors());
+
 app.use(json());
 app.use(privacyMiddleware);
 app.use('/api', apiKeyMiddleware);
+
+// Payment routes (Web + Mobile)
+// Web: POST /api/handshake/create
+// Mobile: POST /api/handshake/verify
+app.use('/api', paymentApiRouter);
+
+// Payment routes (v1)
+app.use('/api/v1/handshake', paymentRouter);
+
 
 // Routes
 const escrowController = new EscrowController(new EscrowService());
@@ -51,3 +75,4 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   logger.error({ message: err?.message, stack: err?.stack });
   res.status(500).json({ error: 'Internal Server Error' });
 });
+
