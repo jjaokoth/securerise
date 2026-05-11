@@ -101,6 +101,8 @@ Deployment is automated via `.github/workflows/deploy.yml` on pushes to `main`.
 
 Technical and investment inquiries: **securerise@outlook.com**
 
+For detailed investor information, see [INVESTOR.md](INVESTOR.md).
+
 ---
 
 Note: Specific verification internals are intentionally abstracted to protect intellectual property.
