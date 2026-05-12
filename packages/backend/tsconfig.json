@@ -8,14 +8,20 @@
     "forceConsistentCasingInFileNames": true,
     "ignoreDeprecations": "6.0",
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": "./",
+
+
     "baseUrl": "./src",
     "types": ["node"],
     "paths": {
-      "*": ["node_modules/*", "*"]
+      "*": ["node_modules/*", "*"],
+      "shared/*": ["shared/*"]
     }
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "shared/**/*.ts"],
+
+
+
   "exclude": ["node_modules", "dist", "prisma/migrations", "prisma.config.ts"]
 
 }
