@@ -22,5 +22,11 @@ router.post('/create', tenantAuth, (req, res) => controller.create(req, res));
 // POST /api/v1/handshake/verify
 router.post('/verify', tenantAuth, (req, res) => controller.verify(req, res));
 
+// Rail verification endpoints (scaffold)
+router.post('/payments/mpesa/verify', tenantAuth, (req, res) => controller.verifyMpesa(req, res));
+router.post('/payments/airtel/verify', tenantAuth, (req, res) => controller.verifyAirtel(req, res));
+router.post('/payments/bank/verify', tenantAuth, (req, res) => controller.verifyBank(req, res));
+
 export default router;
+
 

@@ -1,3 +1,6 @@
+// Copyright (c) 2023 jjaokoth. All rights reserved.
+// This software is proprietary and confidential. Unauthorized copying, modification, or distribution is strictly prohibited.
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -25,6 +28,8 @@ class _SafetyNetScreenState extends State<SafetyNetScreen> {
   final TrustClient _trustClient = TrustClient();
   final TextEditingController _otpController = TextEditingController();
   final FocusNode _otpFocusNode = FocusNode();
+
+  bool _safetyNetEnabled = true;
 
   CameraController? _cameraController;
   XFile? _capturedImage;
@@ -173,12 +178,34 @@ class _SafetyNetScreenState extends State<SafetyNetScreen> {
     return RegExp(r'^\d{6}$').hasMatch(trimmed);
   }
 
+  Future<void> _secondaryVerificationCheck() async {
+    // Scaffolded secondary verification.
+    // For now, we simply return success after a short delay.
+    // This is the hook where you can call a dedicated backend verify endpoint.
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+  }
+
   Future<void> _verifyHandshake() async {
     if (_isLoading) return;
+
+    if (_safetyNetEnabled) {
+      setState(() {
+        _isLoading = true;
+        _errorText = null;
+      });
+
+      await Future<void>.delayed(const Duration(seconds: 2));
+      await _secondaryVerificationCheck();
+
+      // Ensure widget is still mounted after the delay.
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+    }
 
     final otp = _otpController.text.trim();
 
     if (!_isOtpValid(otp)) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Enter a valid 6-digit OTP.')),
       );
@@ -187,6 +214,7 @@ class _SafetyNetScreenState extends State<SafetyNetScreen> {
     }
 
     if (_capturedImage == null) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Capture a proof photo first.')),
       );
@@ -194,6 +222,7 @@ class _SafetyNetScreenState extends State<SafetyNetScreen> {
     }
 
     if (_currentPosition == null) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('GPS location is not available.')),
       );
@@ -254,102 +283,136 @@ class _SafetyNetScreenState extends State<SafetyNetScreen> {
         title: const Text('Safety Net Verification'),
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (_errorText != null) ...[
-                Text(
-                  _errorText!,
-                  style: const TextStyle(color: Colors.red),
-                ),
-                const SizedBox(height: 12),
-              ],
-              const Text(
-                'Enter 6-digit OTP',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _otpController,
-                focusNode: _otpFocusNode,
-                keyboardType: TextInputType.number,
-                maxLength: 6,
-                textInputAction: TextInputAction.done,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  hintText: '000000',
-                  counterText: '',
-                ),
-                onSubmitted: (_) => _verifyHandshake(),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                'Proof of Delivery Photo',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              AspectRatio(
-                aspectRatio: (cameraController?.value.aspectRatio ?? 1),
-                child: cameraController != null &&
-                        cameraController.value.isInitialized
-                    ? CameraPreview(cameraController)
-                    : Center(
-                        child: _isCameraLoading
-                            ? const CircularProgressIndicator()
-                            : const Text('Camera not ready'),
-                      ),
-              ),
-              const SizedBox(height: 8),
-              Row(
+        child: Stack(
+          children: [
+            SingleChildScrollView(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: _isLoading ? null : _capturePhoto,
-                      child: const Text('Capture Photo'),
+                  if (_errorText != null) ...[
+                    Text(
+                      _errorText!,
+                      style: const TextStyle(color: Colors.red),
                     ),
+                    const SizedBox(height: 12),
+                  ],
+                  const Text(
+                    'Enter 6-digit OTP',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _otpController,
+                    focusNode: _otpFocusNode,
+                    keyboardType: TextInputType.number,
+                    maxLength: 6,
+                    textInputAction: TextInputAction.done,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      hintText: '000000',
+                      counterText: '',
+                    ),
+                    onSubmitted: (_) => _verifyHandshake(),
+                  ),
+                  const SizedBox(height: 20),
+                  SwitchListTile(
+                    title: const Text('Safety Net'),
+                    value: _safetyNetEnabled,
+                    onChanged: (bool value) {
+                      setState(() {
+                        _safetyNetEnabled = value;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Proof of Delivery Photo',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  AspectRatio(
+                    aspectRatio: (cameraController?.value.aspectRatio ?? 1),
+                    child: cameraController != null &&
+                            cameraController.value.isInitialized
+                        ? CameraPreview(cameraController)
+                        : Center(
+                            child: _isCameraLoading
+                                ? const CircularProgressIndicator()
+                                : const Text('Camera not ready'),
+                          ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: _isLoading ? null : _capturePhoto,
+                          child: const Text('Capture Photo'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_capturedImage != null) ...[
+                    const SizedBox(height: 12),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.file(
+                        File(_capturedImage!.path),
+                        height: 120,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+                  const Text(
+                    'GPS Location',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(latLngText),
+                  if (_currentPosition == null)
+                    TextButton.icon(
+                      onPressed: _isLoading ? null : _acquireLocation,
+                      icon: const Icon(Icons.my_location),
+                      label: const Text('Retry GPS'),
+                    ),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: _isLoading ? null : _verifyHandshake,
+                    icon: _isLoading
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.verified),
+                    label:
+                        Text(_isLoading ? 'Verifying...' : 'Verify Handshake'),
+                  ),
+                  const SizedBox(height: 60), // Space for watermark
                 ],
               ),
-              if (_capturedImage != null) ...[
-                const SizedBox(height: 12),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.file(
-                    File(_capturedImage!.path),
-                    height: 120,
-                    fit: BoxFit.cover,
+            ),
+            // Watermark overlay
+            Positioned(
+              bottom: 10,
+              left: 10,
+              right: 10,
+              child: Opacity(
+                opacity: 0.3,
+                child: Text(
+                  'Securerise Solutions Limited™',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey.shade600,
                   ),
+                  textAlign: TextAlign.center,
                 ),
-              ],
-              const SizedBox(height: 20),
-              const Text(
-                'GPS Location',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
-              const SizedBox(height: 8),
-              Text(latLngText),
-              if (_currentPosition == null)
-                TextButton.icon(
-                  onPressed: _isLoading ? null : _acquireLocation,
-                  icon: const Icon(Icons.my_location),
-                  label: const Text('Retry GPS'),
-                ),
-              const SizedBox(height: 24),
-              ElevatedButton.icon(
-                onPressed: _isLoading ? null : _verifyHandshake,
-                icon: _isLoading
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.verified),
-                label: Text(_isLoading ? 'Verifying...' : 'Verify Handshake'),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
