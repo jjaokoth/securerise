@@ -13,7 +13,8 @@
     "lint": "npm run lint -w packages/backend"
   },
   "workspaces": [
-    "packages/backend"
+    "packages/backend",
+    "packages/frontend_flutter"
   ],
   "devDependencies": {
     "lerna": "^7.0.0"

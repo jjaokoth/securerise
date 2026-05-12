@@ -45,9 +45,7 @@ build/
 # Coverage
 coverage/
 
-# Exceptions to above rules
-!/packages/*/build/
-!/packages/*/.packages
+
 
 # iOS
 ios/.symlinks/
@@ -98,6 +96,39 @@ macos/Flutter/flutter_export_environment.sh
 # Windows
 windows/flutter/ephemeral/
 windows/flutter/generated_plugins.cmake
+windows/flutter_windows.dll
+windows/debug/
+windows/release/
+
+# ========================================
+# Web
+# ========================================
+web/flutter_service_worker.js
+web/version.json
+
+# ========================================
+# IDE & Local Development
+# ========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ========================================
+# Misc
+# ========================================
+*.iml
+.gradle/
+*.jar
+*.aab
+*.apk
+.metadata/
+Dockerfile.prod
+.env.local
+.env.*.local
 
 # Web
 web/canvaskit/

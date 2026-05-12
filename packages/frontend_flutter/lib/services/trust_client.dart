@@ -63,7 +63,7 @@ class TrustClient {
   /// Returns: Map with handshakeId, status, and otpExpiry
   /// Throws: HttpException on network/server errors
   Future<Map<String, dynamic>> createHandshake({
-    required String merchantId,
+    required String tenantId,
     required String amountInCents, // Amount as string for BigInt compatibility
     required String currency,
     required String recipientId,
@@ -71,14 +71,14 @@ class TrustClient {
   }) async {
     try {
       final body = jsonEncode({
-        'merchantId': merchantId,
+        'tenantId': tenantId,
         'amountInCents': amountInCents, // String to preserve precision
         'currency': currency,
         'recipientId': recipientId,
       });
 
       final response = await _httpClient.post(
-        Uri.parse('$baseUrl/handshake/create'),
+        Uri.parse('$baseUrl/api/v1/handshake/create'),
         headers: _buildHeaders(customIdempotencyKey: idempotencyKey),
         body: body,
       );
@@ -127,7 +127,7 @@ class TrustClient {
       });
 
       final response = await _httpClient.post(
-        Uri.parse('$baseUrl/handshake/$handshakeId/verify'),
+        Uri.parse('$baseUrl/api/v1/handshake/$handshakeId/verify'),
         headers: _buildHeaders(customIdempotencyKey: idempotencyKey),
         body: body,
       );
@@ -151,7 +151,7 @@ class TrustClient {
   Future<Map<String, dynamic>> getHandshakeStatus(String handshakeId) async {
     try {
       final response = await _httpClient.get(
-        Uri.parse('$baseUrl/handshake/$handshakeId'),
+        Uri.parse('$baseUrl/api/v1/handshake/$handshakeId'),
         headers: _buildHeaders(),
       );
 
@@ -179,7 +179,7 @@ class TrustClient {
   }) async {
     try {
       final response = await _httpClient.post(
-        Uri.parse('$baseUrl/handshake/$handshakeId/release'),
+        Uri.parse('$baseUrl/api/v1/handshake/$handshakeId/release'),
         headers: _buildHeaders(customIdempotencyKey: idempotencyKey),
         body: jsonEncode({}),
       );
@@ -211,7 +211,7 @@ class TrustClient {
 
       var request = http.MultipartRequest(
         'POST',
-        Uri.parse('$baseUrl/handshake/$handshakeId/upload-proof'),
+        Uri.parse('$baseUrl/api/v1/handshake/$handshakeId/upload-proof'),
       );
 
       request.headers.addAll(_buildHeaders());
@@ -239,7 +239,7 @@ class TrustClient {
     _authToken = null;
   }
 
-  /// Dispose HTTP client
+  /// Dispose HTTP client resources
   void dispose() {
     _httpClient.close();
   }

@@ -205,13 +205,42 @@ API_BASE_URL=https://securerise-gen-lang-client-XXXX-uc.a.run.app
 
 ## Mobile Setup
 
-### Configure TrustClient
+### Configure Environment
 
-Edit [lib/services/trust_client.dart](packages/frontend_flutter/lib/services/trust_client.dart):
+Create `.env` in `packages/frontend_flutter/`:
 
-```dart
-const String baseUrl = 'https://securerise-gen-lang-client-XXXX-uc.a.run.app';
+```env
+API_BASE_URL=https://securerise-gen-lang-client-XXXX-uc.a.run.app
+API_KEY=your-internal-api-key
 ```
+
+### TrustClient Service
+
+The [lib/services/trust_client.dart](packages/frontend_flutter/lib/services/trust_client.dart) provides:
+
+- `createHandshake()`: Initialize a new payout flow
+- `verifyHandshake()`: Submit OTP + safety net proof
+- Automatic idempotency key generation
+- BigInt-safe JSON serialization (amounts as strings)
+
+### Safety Net Verification Screen
+
+The [lib/screens/safety_net_screen.dart](packages/frontend_flutter/lib/screens/safety_net_screen.dart) implements:
+
+**Features:**
+- 6-digit OTP input with `PinCodeTextField` (visual feedback)
+- Real-time camera preview (proof-of-delivery photo)
+- GPS location capture via `Geolocator`
+- Loading state with "Securing Transaction..." message
+- Error handling with shake animation on validation failure
+
+**User Flow:**
+1. Field agent enters 6-digit OTP
+2. System captures location (requires permission)
+3. Agent takes proof-of-delivery photo via camera
+4. Agent taps "Verify Handshake"
+5. System sends OTP + photo + GPS to backend
+6. Backend verifies and releases funds
 
 ### Permissions (Android)
 
@@ -224,6 +253,9 @@ Add to `android/app/src/main/AndroidManifest.xml`:
 <!-- Location -->
 <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+<!-- Internet -->
+<uses-permission android:name="android.permission.INTERNET" />
 ```
 
 ### Permissions (iOS)
@@ -232,31 +264,118 @@ Add to `ios/Runner/Info.plist`:
 
 ```xml
 <key>NSCameraUsageDescription</key>
-<string>Camera access is required for proof-of-delivery photo capture</string>
+<string>Camera access required for proof-of-delivery photo capture</string>
 
 <key>NSLocationWhenInUseUsageDescription</key>
-<string>Location is required for safety net verification</string>
+<string>Location required for safety net verification at point of release</string>
+
+<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+<string>Location required for proof of delivery binding</string>
 ```
+
+### Running on Device
+
+**Android Emulator:**
+```bash
+cd packages/frontend_flutter
+flutter run
+```
+
+**iOS Simulator:**
+```bash
+cd packages/frontend_flutter
+flutter run -d "iPhone 15 Pro"
+```
+
+**Physical Device:**
+```bash
+flutter run -v
+```
+
+### Testing Workflow
+
+1. Create a handshake via backend: `POST /api/v1/handshake/create`
+2. Launch SafetyNetScreen with `handshakeId`
+3. Enter OTP (from backend response)
+4. Take a photo and verify location
+5. Tap "Verify Handshake"
+6. Observe "Securing Transaction..." loading state
+7. Check response for `status: "RELEASED"`
 
 ---
 
 ## API Documentation
 
-See [packages/docs/API_REFERENCE.md](packages/docs/API_REFERENCE.md) for detailed endpoint documentation.
+### Handshake Endpoints
 
-### Key Endpoints
+See [packages/docs/API_REFERENCE.md](packages/docs/API_REFERENCE.md) for complete REST API documentation.
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/handshake/create` | Create a new locked handshake |
-| `POST` | `/handshake/:id/verify` | Verify OTP and bind safety net proof |
-| `GET` | `/handshake/:id` | Retrieve handshake status |
-| `POST` | `/handshake/:id/release` | Release payout (idempotent) |
+#### Create Handshake
 
-### Base URL
+**Endpoint:** `POST /api/v1/handshake/create`
 
+**Request:**
+```json
+{
+  "tenantId": "merchant-123",
+  "amount": 5000,
+  "recipient": "+254712345678",
+  "route": "MPESA"
+}
 ```
-https://securerise-gen-lang-client-XXXX-uc.a.run.app
+
+**Response:**
+```json
+{
+  "handshakeId": "hs_abc123def456",
+  "otp": "123456",
+  "status": "LOCKED",
+  "expiresAt": "2026-05-12T12:30:00Z"
+}
+```
+
+#### Verify Handshake
+
+**Endpoint:** `POST /api/v1/handshake/verify`
+
+**Headers:**
+- `X-Idempotency-Key`: UUID or timestamp (required)
+- `X-API-Key`: Internal API key (if configured)
+
+**Request:**
+```json
+{
+  "handshakeId": "hs_abc123def456",
+  "otpCode": "123456",
+  "safetyNetImageUrl": "https://storage.example.com/pod-photo-xyz.jpg",
+  "gpsCoords": {
+    "lat": -1.2833,
+    "lng": 36.8167
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "status": "RELEASED",
+  "transactionId": "txn_xyz789",
+  "releasedAt": "2026-05-12T12:25:00Z"
+}
+```
+
+#### Get Handshake Status
+
+**Endpoint:** `GET /api/v1/handshake/:id`
+
+**Response:**
+```json
+{
+  "id": "hs_abc123def456",
+  "status": "LOCKED",
+  "createdAt": "2026-05-12T12:00:00Z",
+  "expiresAt": "2026-05-12T12:30:00Z"
+}
 ```
 
 ---
