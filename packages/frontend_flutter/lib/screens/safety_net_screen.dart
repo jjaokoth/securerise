@@ -10,7 +10,7 @@ import '../services/location_service.dart';
 /// SafetyNetScreen provides the Field Agent verification UI
 ///
 /// Features:
-/// - 6-digit OTP input via PinCodeTextField
+/// - 6-digit OTP input
 /// - Camera preview with photo capture
 /// - GPS coordinate acquisition
 /// - Real-time loading state

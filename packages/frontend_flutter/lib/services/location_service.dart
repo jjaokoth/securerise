@@ -139,7 +139,7 @@ class LocationService {
   }
 
   /// Open device location app settings
-  static Future<void> openAppSettings() async {
+  static Future<void> openAppSettingsPage() async {
     await openAppSettings();
   }
 }
