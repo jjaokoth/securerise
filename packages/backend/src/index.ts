@@ -1,3 +1,6 @@
+// Copyright (c) 2023 jjaokoth. All rights reserved.
+// This software is proprietary and confidential. Unauthorized copying, modification, or distribution is strictly prohibited.
+
 import express from 'express';
 import cors from 'cors';
 import paymentRoutes from './routes/paymentRoutes';
@@ -10,7 +13,18 @@ const PORT = process.env.PORT || 8080;
   return this.toString();
 };
 
-app.use(cors());
+const productionOrigin =
+  'https://securerise-gen-lang-client-0791519677-uc.a.run.app';
+
+app.use(
+  cors({
+    origin: productionOrigin,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Accept', 'Authorization', 'X-Idempotency-Key'],
+    credentials: false,
+  }),
+);
+
 app.use(express.json());
 
 // Health Check for Google Cloud Load Balancer

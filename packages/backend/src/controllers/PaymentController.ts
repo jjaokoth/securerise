@@ -32,6 +32,20 @@ type CreateHandshakeBody = {
   route: PayoutRoute;
 };
 
+// Rail-specific transfer verification scaffolding.
+// These endpoints mirror the existing handshake verify flow but provide
+// stable, rail-differentiated routes for clients.
+
+type RailVerifyBody = {
+  handshakeId: string;
+  otpCode: string;
+  // Accept either a URL or base64.
+  safetyNetImageUrl?: string | null;
+  photoBase64?: string | null;
+  gpsCoords: { lat: number; lng: number } | unknown;
+};
+
+
 type VerifyHandshakeBody = {
   handshakeId: string;
   otpCode: string;
@@ -48,6 +62,7 @@ export class PaymentController {
   async create(req: Request, res: Response) {
 
     try {
+
       const body = req.body as Partial<CreateHandshakeBody>;
 
       const tenantId = typeof body?.tenantId === 'string' ? body.tenantId : '';
@@ -78,6 +93,7 @@ export class PaymentController {
 
   // POST /api/v1/handshake/verify
   async verify(req: Request, res: Response) {
+
     try {
       const idempotencyKey = String(req.header('x-idempotency-key') ?? '').trim();
       if (!idempotencyKey) return res.status(400).json({ error: 'idempotencyKey_REQUIRED' });
@@ -123,6 +139,78 @@ export class PaymentController {
       return res.status(500).json({ error: msg });
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // Rail verification endpoints (scaffold)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * POST /api/v1/payments/mpesa/verify
+   */
+  async verifyMpesa(req: Request, res: Response) {
+    return this.verifyRail(req, res);
+  }
+
+  /**
+   * POST /api/v1/payments/airtel/verify
+   */
+  async verifyAirtel(req: Request, res: Response) {
+    return this.verifyRail(req, res);
+  }
+
+  /**
+   * POST /api/v1/payments/bank/verify
+   */
+  async verifyBank(req: Request, res: Response) {
+    return this.verifyRail(req, res);
+  }
+
+  private async verifyRail(req: Request, res: Response) {
+    try {
+      const idempotencyKey = String(req.header('x-idempotency-key') ?? '').trim();
+      if (!idempotencyKey) return res.status(400).json({ error: 'idempotencyKey_REQUIRED' });
+
+      const body = req.body as Partial<RailVerifyBody>;
+      const handshakeId = typeof body?.handshakeId === 'string' ? body.handshakeId : '';
+      const otpCode = typeof body?.otpCode === 'string' ? body.otpCode : '';
+      const safetyNetImageUrl =
+        typeof body?.safetyNetImageUrl === 'string' ? body.safetyNetImageUrl : '';
+      const photoBase64 =
+        typeof body?.photoBase64 === 'string' ? body.photoBase64 : '';
+      const gpsCoords = body?.gpsCoords;
+
+      if (!handshakeId.trim()) return res.status(400).json({ error: 'handshakeId_REQUIRED' });
+      if (!otpCode.trim()) return res.status(400).json({ error: 'otpCode_REQUIRED' });
+
+      if (!safetyNetImageUrl.trim() && !photoBase64.trim()) {
+        return res.status(400).json({ error: 'safetyNetImageUrl_OR_photoBase64_REQUIRED' });
+      }
+
+      const updated = await this.paymentService.verifyAndRelease({
+        handshakeId,
+        userProvidedOtp: otpCode,
+        safetyNetImageUrl: photoBase64.trim() ? photoBase64 : safetyNetImageUrl,
+        gpsMetadata: gpsCoords,
+        idempotencyKey,
+      });
+
+      return res.status(200).json({
+        success: true,
+        ...((normalizeBigIntToString(updated) as any) ?? {}),
+      });
+    } catch (err: any) {
+      const msg = typeof err?.message === 'string' ? err.message : 'RAIL_VERIFY_FAILED';
+
+      if (msg === 'INVALID_OTP') return res.status(400).json({ error: msg });
+      if (msg === 'NOT_FOUND') return res.status(404).json({ error: msg });
+      if (msg === 'ALREADY_PROCESSED') return res.status(409).json({ error: msg });
+
+      return res.status(500).json({ error: msg });
+    }
+  }
 }
+
+
+
 
 

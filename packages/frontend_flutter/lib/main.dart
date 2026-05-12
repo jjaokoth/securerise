@@ -1,3 +1,6 @@
+// Copyright (c) 2023 jjaokoth. All rights reserved.
+// This software is proprietary and confidential. Unauthorized copying, modification, or distribution is strictly prohibited.
+
 import 'package:flutter/material.dart';
 
 import 'screens/safety_net_screen.dart';

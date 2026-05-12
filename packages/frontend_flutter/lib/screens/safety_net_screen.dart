@@ -1,3 +1,6 @@
+// Copyright (c) 2023 jjaokoth. All rights reserved.
+// This software is proprietary and confidential. Unauthorized copying, modification, or distribution is strictly prohibited.
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -25,6 +28,8 @@ class _SafetyNetScreenState extends State<SafetyNetScreen> {
   final TrustClient _trustClient = TrustClient();
   final TextEditingController _otpController = TextEditingController();
   final FocusNode _otpFocusNode = FocusNode();
+
+  bool _safetyNetEnabled = true;
 
   CameraController? _cameraController;
   XFile? _capturedImage;
@@ -173,12 +178,34 @@ class _SafetyNetScreenState extends State<SafetyNetScreen> {
     return RegExp(r'^\d{6}$').hasMatch(trimmed);
   }
 
+  Future<void> _secondaryVerificationCheck() async {
+    // Scaffolded secondary verification.
+    // For now, we simply return success after a short delay.
+    // This is the hook where you can call a dedicated backend verify endpoint.
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+  }
+
   Future<void> _verifyHandshake() async {
     if (_isLoading) return;
+
+    if (_safetyNetEnabled) {
+      setState(() {
+        _isLoading = true;
+        _errorText = null;
+      });
+
+      await Future<void>.delayed(const Duration(seconds: 2));
+      await _secondaryVerificationCheck();
+
+      // Ensure widget is still mounted after the delay.
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+    }
 
     final otp = _otpController.text.trim();
 
     if (!_isOtpValid(otp)) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Enter a valid 6-digit OTP.')),
       );
@@ -187,6 +214,7 @@ class _SafetyNetScreenState extends State<SafetyNetScreen> {
     }
 
     if (_capturedImage == null) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Capture a proof photo first.')),
       );
@@ -194,6 +222,7 @@ class _SafetyNetScreenState extends State<SafetyNetScreen> {
     }
 
     if (_currentPosition == null) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('GPS location is not available.')),
       );
@@ -285,6 +314,16 @@ class _SafetyNetScreenState extends State<SafetyNetScreen> {
                 onSubmitted: (_) => _verifyHandshake(),
               ),
               const SizedBox(height: 20),
+              SwitchListTile(
+                title: const Text('Safety Net'),
+                value: _safetyNetEnabled,
+                onChanged: (bool value) {
+                  setState(() {
+                    _safetyNetEnabled = value;
+                  });
+                },
+              ),
+              const SizedBox(height: 12),
               const Text(
                 'Proof of Delivery Photo',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),

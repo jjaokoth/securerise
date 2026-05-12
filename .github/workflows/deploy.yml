@@ -53,12 +53,12 @@ jobs:
         run: |
           docker build \
             -t "${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}" \
-            ./securerise/packages/backend
+            .
 
-
-      - name: Docker Push
+      - name Docker Push
         run: |
           docker push "${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+
 
       - name: Deploy to Cloud Run
         run: |
