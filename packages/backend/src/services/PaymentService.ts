@@ -152,21 +152,24 @@ export class PaymentService {
     // CRITICAL: OTP hashing at verify time
     const userOtpHash = sha256Hex(userOtp);
 
+    // Accept both a URL and base64 image (mobile sends base64).
+    // This service stores it as-is into podPhotoUrlCiphertext placeholder.
     const podPhotoUrl = assertNonEmptyString(input.safetyNetImageUrl, 'safetyNetImageUrl');
     const podGpsMetadata = input.gpsMetadata;
 
     // CRITICAL: capture podPhotoUrl and podGps metadata
-    // Since schema stores ciphertext/iv placeholders, we store the raw values as-is
-    // (ciphertext placeholder). Real encryption can replace these without API changes.
+    // Since schema stores ciphertext/iv placeholders, we store the raw values as-is.
+    // Real encryption can replace these without API changes.
     const podGpsCiphertext = JSON.stringify(podGpsMetadata ?? null);
 
-    // eslint-disable-next-line no-console
-    console.info('[Securerise] verifyAndRelease', {
-      handshakeId,
-      idempotencyKey,
-      podPhotoUrl,
-      podGpsMetadata,
-    });
+    // Avoid leaking sensitive data into logs.
+    if (process.env.NODE_ENV !== 'production') {
+      // eslint-disable-next-line no-console
+      console.debug('[Securerise] verifyAndRelease', {
+        handshakeId,
+        idempotencyKey,
+      });
+    }
 
     try {
       const result = await this.prisma.$transaction(async (tx) => {

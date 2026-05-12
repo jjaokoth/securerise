@@ -35,7 +35,9 @@ type CreateHandshakeBody = {
 type VerifyHandshakeBody = {
   handshakeId: string;
   otpCode: string;
-  safetyNetImageUrl: string;
+  // Accept either a URL or base64 (mobile sends base64)
+  safetyNetImageUrl?: string | null;
+  photoBase64?: string | null;
   gpsCoords: { lat: number; lng: number } | unknown;
 };
 
@@ -83,17 +85,25 @@ export class PaymentController {
       const body = req.body as Partial<VerifyHandshakeBody>;
       const handshakeId = typeof body?.handshakeId === 'string' ? body.handshakeId : '';
       const otpCode = typeof body?.otpCode === 'string' ? body.otpCode : '';
-      const safetyNetImageUrl = typeof body?.safetyNetImageUrl === 'string' ? body.safetyNetImageUrl : '';
+      const safetyNetImageUrl =
+        typeof body?.safetyNetImageUrl === 'string' ? body.safetyNetImageUrl : '';
+      const photoBase64 =
+        typeof body?.photoBase64 === 'string' ? body.photoBase64 : '';
       const gpsCoords = body?.gpsCoords;
 
       if (!handshakeId.trim()) return res.status(400).json({ error: 'handshakeId_REQUIRED' });
       if (!otpCode.trim()) return res.status(400).json({ error: 'otpCode_REQUIRED' });
-      if (!safetyNetImageUrl.trim()) return res.status(400).json({ error: 'safetyNetImageUrl_REQUIRED' });
+
+      // Mobile currently sends `photoBase64` (no upload URL). Backend accepts either.
+      if (!safetyNetImageUrl.trim() && !photoBase64.trim()) {
+        return res.status(400).json({ error: 'safetyNetImageUrl_OR_photoBase64_REQUIRED' });
+      }
 
       const updated = await this.paymentService.verifyAndRelease({
         handshakeId,
         userProvidedOtp: otpCode,
-        safetyNetImageUrl,
+        // Keep service signature stable by mapping base64 -> image field.
+        safetyNetImageUrl: photoBase64.trim() ? photoBase64 : safetyNetImageUrl,
         gpsMetadata: gpsCoords,
         idempotencyKey,
       });

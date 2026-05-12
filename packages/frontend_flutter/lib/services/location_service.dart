@@ -76,8 +76,10 @@ class LocationService {
 
       // Get current position with timeout
       final position = await Geolocator.getCurrentPosition(
-        timeLimit: const Duration(seconds: 10),
-        forceAndroidLocationManager: true,
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 10),
+        ),
       );
 
       return position;
@@ -110,8 +112,10 @@ class LocationService {
       }
 
       return await Geolocator.getCurrentPosition(
-        timeLimit: Duration(seconds: timeoutSeconds),
-        forceAndroidLocationManager: true,
+        locationSettings: LocationSettings(
+          accuracy: desiredAccuracy,
+          timeLimit: Duration(seconds: timeoutSeconds),
+        ),
       );
     } catch (e) {
       rethrow;

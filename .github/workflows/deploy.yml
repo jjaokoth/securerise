@@ -10,8 +10,7 @@ env:
   GCP_REGION: ${{ secrets.GCP_REGION }}
   CLOUD_RUN_SERVICE: ${{ secrets.CLOUD_RUN_SERVICE }}
 
-  # Use GCR or Artifact Registry depending on your setup.
-  # This workflow defaults to Artifact Registry (pkg.dev).
+  # Artifact Registry (recommended). Ensure this secret exists.
   ARTIFACT_REGISTRY_REPOSITORY: ${{ secrets.ARTIFACT_REGISTRY_REPOSITORY }}
   IMAGE_NAME: securerise
 
@@ -21,6 +20,9 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./securerise/packages/backend
 
     steps:
       - name: Checkout
@@ -41,18 +43,18 @@ jobs:
         run: |
           gcloud services enable \
             run.googleapis.com \
-            containerregistry.googleapis.com
+            artifactregistry.googleapis.com
 
       - name: Configure Docker authentication (Artifact Registry)
         run: |
           gcloud auth configure-docker "${{ env.GCP_REGION }}-docker.pkg.dev" --quiet
 
-
       - name: Docker Build
         run: |
           docker build \
             -t "${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}" \
-            securerise
+            ./securerise/packages/backend
+
 
       - name: Docker Push
         run: |
@@ -66,5 +68,4 @@ jobs:
             --platform managed \
             --quiet \
             --allow-unauthenticated
-
 

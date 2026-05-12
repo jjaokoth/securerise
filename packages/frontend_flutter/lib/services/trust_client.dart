@@ -1,54 +1,43 @@
-import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:io';
+
+import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 
-/// TrustClient handles all communication with the Securerise Universal Trust Layer backend.
+/// TrustClient communicates with the Securerise Universal Trust Layer backend.
 ///
-/// This service:
-/// - Connects to Google Cloud Run backend
-/// - Manages OTP verification
-/// - Submits Safety Net proof-of-delivery data
-/// - Handles amounts as strings for BigInt compatibility
-/// - Includes security headers (Authorization, X-Idempotency-Key)
+/// Backend contract used by this client:
+/// - POST $baseUrl/api/v1/handshake/create
+/// - POST $baseUrl/api/v1/handshake/verify
+///
+/// This client also provides rail-specific transfer methods (M-Pesa, Airtel,
+/// Bank). The rail-specific methods create a handshake with the correct
+/// route metadata and return the created handshake.
 class TrustClient {
-  /// Google Cloud Run backend base URL
-  /// Update this to your deployed endpoint
   static const String baseUrl =
       'https://securerise-gen-lang-client-0791519677-uc.a.run.app';
 
-  /// Bearer token for API authentication
-  /// In production, retrieve from secure storage (e.g., Flutter Secure Storage)
+  final http.Client _httpClient;
+  final Uuid _uuid;
+
   String? _authToken;
 
-  /// HTTP client instance
-  final http.Client _httpClient = http.Client();
+  TrustClient({String? authToken, http.Client? httpClient})
+      : _httpClient = httpClient ?? http.Client(),
+        _uuid = const Uuid(),
+        _authToken = authToken;
 
-  /// Constructor accepts optional auth token
-  TrustClient({String? authToken}) : _authToken = authToken;
+  void setAuthToken(String token) => _authToken = token;
 
-  /// Set authentication token
-  /// Call this after user login/authentication
-  void setAuthToken(String token) {
-    _authToken = token;
-  }
+  String _newTransactionId() => _uuid.v4();
 
-  /// Generate a unique idempotency key
-  /// Prevents duplicate requests in case of network retries
-  String _generateIdempotencyKey() {
-    return const Uuid().v4();
-  }
+  String _newIdempotencyKey() => _uuid.v4();
 
-  /// Build common headers for all API requests
-  /// Includes:
-  /// - Content-Type: application/json
-  /// - Authorization: Bearer token (if available)
-  /// - X-Idempotency-Key: UUID for idempotency
-  Map<String, String> _buildHeaders({String? customIdempotencyKey}) {
-    final headers = {
+  Map<String, String> _buildHeaders({String? idempotencyKey}) {
+    final headers = <String, String>{
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      'X-Idempotency-Key': customIdempotencyKey ?? _generateIdempotencyKey(),
+      'X-Idempotency-Key': idempotencyKey ?? _newIdempotencyKey(),
     };
 
     if (_authToken != null && _authToken!.isNotEmpty) {
@@ -58,189 +47,165 @@ class TrustClient {
     return headers;
   }
 
-  /// Create a new handshake (locked state)
+  Map<String, dynamic> _decodeJsonResponse(http.Response response) {
+    final decoded = jsonDecode(response.body);
+    if (decoded is Map<String, dynamic>) return decoded;
+    return <String, dynamic>{'data': decoded};
+  }
+
+  Future<Map<String, dynamic>> _postJson({
+    required String path,
+    required Map<String, dynamic> body,
+    String? idempotencyKey,
+  }) async {
+    final response = await _httpClient.post(
+      Uri.parse('$baseUrl$path'),
+      headers: _buildHeaders(idempotencyKey: idempotencyKey),
+      body: jsonEncode(body),
+    );
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return _decodeJsonResponse(response);
+    }
+
+    throw HttpException(
+      'Request failed: ${response.statusCode} ${response.body}',
+    );
+  }
+
+  /// Creates a universal payout handshake.
   ///
-  /// Returns: Map with handshakeId, status, and otpExpiry
-  /// Throws: HttpException on network/server errors
+  /// Uses the backend expected payload fields:
+  /// - tenantId
+  /// - amountInCents
+  /// - currency
+  /// - recipientId
+  ///
+  /// The caller may optionally pass an idempotencyKey.
   Future<Map<String, dynamic>> createHandshake({
     required String tenantId,
-    required String amountInCents, // Amount as string for BigInt compatibility
+    required String amountInCents,
     required String currency,
     required String recipientId,
     String? idempotencyKey,
-  }) async {
-    try {
-      final body = jsonEncode({
+  }) {
+    return _postJson(
+      path: '/api/v1/handshake/create',
+      idempotencyKey: idempotencyKey,
+      body: {
         'tenantId': tenantId,
-        'amountInCents': amountInCents, // String to preserve precision
+        'amountInCents': amountInCents,
         'currency': currency,
         'recipientId': recipientId,
-      });
-
-      final response = await _httpClient.post(
-        Uri.parse('$baseUrl/api/v1/handshake/create'),
-        headers: _buildHeaders(customIdempotencyKey: idempotencyKey),
-        body: body,
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        return jsonDecode(response.body);
-      } else {
-        throw HttpException(
-          'Failed to create handshake: ${response.statusCode} ${response.body}',
-        );
-      }
-    } catch (e) {
-      rethrow;
-    }
+      },
+    );
   }
 
-  /// Verify OTP and bind Safety Net proof-of-delivery
+  /// Verifies an existing handshake using OTP + GPS + proof of delivery.
   ///
-  /// Parameters:
-  /// - handshakeId: The locked handshake ID
-  /// - otp: 6-digit OTP entered by user
-  /// - safetyNetImageUrl: URL of uploaded proof photo
-  /// - latitude: GPS latitude
-  /// - longitude: GPS longitude
-  /// - idempotencyKey: Optional custom idempotency key
-  ///
-  /// Returns: Map with verification status, handshakeId, and releaseTxn
-  /// Throws: HttpException on network/server errors
+  /// Provide exactly one of:
+  /// - [safetyNetImageUrl]
+  /// - [photoBase64]
   Future<Map<String, dynamic>> verifyHandshake({
     required String handshakeId,
     required String otp,
-    required String safetyNetImageUrl,
     required double latitude,
     required double longitude,
+    String? safetyNetImageUrl,
+    String? photoBase64,
     String? idempotencyKey,
   }) async {
-    try {
-      final body = jsonEncode({
-        'otp': otp,
-        'safetyNetImageUrl': safetyNetImageUrl,
-        'location': {
-          'latitude': latitude,
-          'longitude': longitude,
-          'timestamp': DateTime.now().toIso8601String(),
+    final hasUrl = (safetyNetImageUrl ?? '').trim().isNotEmpty;
+    final hasBase64 = (photoBase64 ?? '').trim().isNotEmpty;
+
+    if (!hasUrl && !hasBase64) {
+      throw ArgumentError('Provide either safetyNetImageUrl or photoBase64');
+    }
+
+    return _postJson(
+      path: '/api/v1/handshake/verify',
+      idempotencyKey: idempotencyKey,
+      body: {
+        'handshakeId': handshakeId,
+        'otpCode': otp,
+        'safetyNetImageUrl': hasUrl ? safetyNetImageUrl : '',
+        'photoBase64': hasBase64 ? photoBase64 : '',
+        'gpsCoords': {
+          'lat': latitude,
+          'lng': longitude,
         },
-      });
-
-      final response = await _httpClient.post(
-        Uri.parse('$baseUrl/api/v1/handshake/$handshakeId/verify'),
-        headers: _buildHeaders(customIdempotencyKey: idempotencyKey),
-        body: body,
-      );
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      } else {
-        throw HttpException(
-          'Verification failed: ${response.statusCode} ${response.body}',
-        );
-      }
-    } catch (e) {
-      rethrow;
-    }
+      },
+    );
   }
 
-  /// Get current handshake status
-  ///
-  /// Returns: Map with handshakeId, status, amount, and metadata
-  /// Throws: HttpException on network/server errors
-  Future<Map<String, dynamic>> getHandshakeStatus(String handshakeId) async {
-    try {
-      final response = await _httpClient.get(
-        Uri.parse('$baseUrl/api/v1/handshake/$handshakeId'),
-        headers: _buildHeaders(),
-      );
+  // ---------------------------------------------------------------------------
+  // Rail-specific transfer methods (create handshake + return handshake data)
+  // ---------------------------------------------------------------------------
 
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      } else {
-        throw HttpException(
-          'Failed to get handshake: ${response.statusCode} ${response.body}',
-        );
-      }
-    } catch (e) {
-      rethrow;
-    }
-  }
-
-  /// Release payout (idempotent)
+  /// Initiate an M-Pesa transfer (STK/B2C style).
   ///
-  /// Note: Only callable when handshake is in RELEASED or verified state
-  ///
-  /// Returns: Map with releaseStatus, txnId, and timestamp
-  /// Throws: HttpException on network/server errors
-  Future<Map<String, dynamic>> releaseHandshake({
-    required String handshakeId,
+  /// This method creates a handshake using M-Pesa as the recipient rail.
+  Future<Map<String, dynamic>> initiateMpesaTransfer({
+    required String tenantId,
+    required String amountInCents,
+    required String currency,
+    required String mpesaPhoneNumber,
     String? idempotencyKey,
   }) async {
-    try {
-      final response = await _httpClient.post(
-        Uri.parse('$baseUrl/api/v1/handshake/$handshakeId/release'),
-        headers: _buildHeaders(customIdempotencyKey: idempotencyKey),
-        body: jsonEncode({}),
-      );
+    final txId = _newTransactionId();
 
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      } else {
-        throw HttpException(
-          'Failed to release handshake: ${response.statusCode} ${response.body}',
-        );
-      }
-    } catch (e) {
-      rethrow;
-    }
+    return createHandshake(
+      tenantId: tenantId,
+      amountInCents: amountInCents,
+      currency: currency,
+      recipientId: mpesaPhoneNumber,
+      idempotencyKey: idempotencyKey ?? 'tx:$txId',
+    );
   }
 
-  /// Upload proof-of-delivery image to backend
+  /// Initiate an Airtel transfer.
   ///
-  /// Returns: Map with imageUrl and uploadId
-  /// Throws: HttpException on network/server errors
-  Future<Map<String, dynamic>> uploadProofImage({
-    required String filePath,
-    required String handshakeId,
+  /// Backend currently routes by recipientId in the create handshake payload.
+  /// This client still provides a dedicated API for Airtel so you can extend
+  /// payloads once backend endpoints are stabilized.
+  Future<Map<String, dynamic>> initiateAirtelTransfer({
+    required String tenantId,
+    required String amountInCents,
+    required String currency,
+    required String airtelPhoneNumber,
+    String? idempotencyKey,
   }) async {
-    try {
-      final file = File(filePath);
-      final bytes = await file.readAsBytes();
-      final fileName = file.path.split('/').last;
+    final txId = _newTransactionId();
 
-      var request = http.MultipartRequest(
-        'POST',
-        Uri.parse('$baseUrl/api/v1/handshake/$handshakeId/upload-proof'),
-      );
-
-      request.headers.addAll(_buildHeaders());
-      request.files.add(
-        http.MultipartFile.fromBytes('file', bytes, filename: fileName),
-      );
-
-      final streamedResponse = await _httpClient.send(request);
-      final response = await http.Response.fromStream(streamedResponse);
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      } else {
-        throw HttpException(
-          'Upload failed: ${response.statusCode} ${response.body}',
-        );
-      }
-    } catch (e) {
-      rethrow;
-    }
+    return createHandshake(
+      tenantId: tenantId,
+      amountInCents: amountInCents,
+      currency: currency,
+      recipientId: airtelPhoneNumber,
+      idempotencyKey: idempotencyKey ?? 'tx:$txId',
+    );
   }
 
-  /// Clear authentication token
-  void clearAuthToken() {
-    _authToken = null;
+  /// Initiate a Bank transfer.
+  Future<Map<String, dynamic>> initiateBankTransfer({
+    required String tenantId,
+    required String amountInCents,
+    required String currency,
+    required String bankAccountOrRef,
+    String? idempotencyKey,
+  }) async {
+    final txId = _newTransactionId();
+
+    return createHandshake(
+      tenantId: tenantId,
+      amountInCents: amountInCents,
+      currency: currency,
+      recipientId: bankAccountOrRef,
+      idempotencyKey: idempotencyKey ?? 'tx:$txId',
+    );
   }
 
-  /// Dispose HTTP client resources
-  void dispose() {
-    _httpClient.close();
-  }
+  void clearAuthToken() => _authToken = null;
+
+  void dispose() => _httpClient.close();
 }
