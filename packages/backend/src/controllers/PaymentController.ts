@@ -127,6 +127,7 @@ export class PaymentController {
       // Critical: convert BigInt to strings before returning JSON.
       return res.status(200).json({
         success: true,
+        watermark: 'Securerise Solutions Limited™',
         ...((normalizeBigIntToString(updated) as any) ?? {}),
       });
     } catch (err: any) {
@@ -196,6 +197,7 @@ export class PaymentController {
 
       return res.status(200).json({
         success: true,
+        watermark: 'Securerise Solutions Limited™',
         ...((normalizeBigIntToString(updated) as any) ?? {}),
       });
     } catch (err: any) {
