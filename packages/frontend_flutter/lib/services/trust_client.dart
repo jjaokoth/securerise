@@ -2,10 +2,13 @@
 // This software is proprietary and confidential. Unauthorized copying, modification, or distribution is strictly prohibited.
 
 import 'dart:convert';
-import 'dart:io';
+import 'dart:io' show HttpException;
 
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
+
+// Note: Flutter web builds do not support dart:io. We only import HttpException
+// for typing; the implementation avoids any other dart:io usage.
 
 /// TrustClient communicates with the Securerise Universal Trust Layer backend.
 ///
