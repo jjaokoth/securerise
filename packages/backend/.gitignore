@@ -1,0 +1,64 @@
+# Environment variables (NEVER commit)
+.env
+.env.*
+
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Build output
+dist/
+build/
+.next/
+*.tsbuildinfo
+
+# Prisma / migrations local state
+prisma/migrations/**/dev.db
+prisma/dev.db
+
+# Logs
+
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# System
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary
+tmp/
+temp/
+.cache/
+
+# Uploads (temporary files)
+uploads/
+*.tmp
+
+# Local database artifacts
+prisma/dev.db
+*.sqlite
+pgdata/
+postgres-data/
+
+# Prisma
+.env.local
+
+# Local/prisma db artifacts (must never be committed)
+prisma/*.db
+prisma/**/*.db
+prisma/migrations/**/dev.db
+

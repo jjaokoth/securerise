@@ -1,0 +1,223 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// --- Hybrid-trust payment processor transaction ---
+enum TransactionStatus {
+  PENDING
+  LOCKED
+  RELEASED
+  DISPUTED
+}
+
+
+
+model User {
+  id                Int            @id @default(autoincrement())
+  anonymousId       String         @unique
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  escrowTransactions Transaction[]
+}
+
+model Transaction {
+  id            String            @id @default(uuid())
+  amount        BigInt
+  currency      String            @default("KES")
+  status        TransactionStatus
+  otpHandshake  String
+  safetyNetUrl  String?
+  metadata      Json?
+  channel       String
+
+  // Optional back-reference for schema completeness
+  userId        Int?
+  user          User?            @relation(fields: [userId], references: [id])
+}
+
+
+
+// --- Payout routing models ---
+
+enum PayoutHandshakeStatus {
+  LOCKED
+  RELEASED
+  FAILED
+}
+
+enum PayoutRoute {
+  MPESA
+  BANK
+  USDC
+}
+
+model PayoutHandshake {
+  id                      Int                      @id @default(autoincrement())
+
+  // Multi-tenant isolation (MUST be present for every record)
+  tenantId                String
+  tenant                   Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  handshakeId            String                   @unique
+  route                   PayoutRoute
+
+  // Double-layer verification state
+  status                  PayoutHandshakeStatus
+  aiConfidence            Float
+
+  // --- Primary (OTP) verification ---
+  handshakeCodeHash      String?                 @db.Text // store hashed OTP only
+  otpMatchedAt            DateTime?
+  otpAttemptCount        Int                      @default(0)
+  otpLastAttemptAt       DateTime?
+
+  // --- Secondary (Safety Net) PoD binding ---
+  podPhotoUrlCiphertext  String?                 @db.Text
+  podPhotoUrlIv           String?                 @db.Text
+  podGpsCiphertext        String?                 @db.Text
+  podGpsIv                 String?                 @db.Text
+  podIntegrityHash        String?                 @unique // immutable proof-of-delivery integrity binding
+  podVerifiedAt           DateTime?
+  podUploadSuccessAt      DateTime?
+
+  // --- Accounting inputs (integer cents; bank-grade precision) ---
+  amountKESCents         BigInt
+  amountUSDCents         BigInt
+  exchangeRateKESPerUSDC BigInt // fixed-point: KES cents per USDC cent
+
+  // Currency/recipient routing data
+  mpesaB2CRecipient       String?
+  pesaLinkRecipient       String?
+  circleRecipient         String?
+
+  // Idempotency and atomic release tracking
+  releaseAttemptCount     Int                      @default(0)
+  releaseIdempotencyKey   String?                 @unique
+  processedReleaseTxId    String?                 @unique
+  releasedAt              DateTime?
+  failureReason           String?
+
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  auditLogs               AuditLog[]
+
+  @@index([tenantId, handshakeId])
+}
+
+
+enum VerificationTaskStatus {
+  QUEUED
+  RUNNING
+  DONE
+  ERROR
+}
+
+model VerificationTask {
+  id           String                 @id @default(uuid())
+
+  // Multi-tenant isolation
+  tenantId     String
+  tenant       Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  handshakeId  String
+  evidenceUrl  String
+  callbackUrl  String
+
+  status       VerificationTaskStatus
+  aiConfidence Float?
+  verified     Boolean?
+  lastError    String?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([tenantId, handshakeId])
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+model Tenant {
+  id              String            @id @default(uuid())
+  name            String
+
+  // Store a hashed API key (never plaintext)
+  hashedApiKey   String            @unique
+  webhookSecret  String
+  status          TenantStatus
+
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  payoutHandshakes   PayoutHandshake[]
+  verificationTasks   VerificationTask[]
+  auditLogs           AuditLog[]
+  deadLetterQueues    DeadLetterQueue[]
+}
+
+model AuditLog {
+  id           String   @id @default(uuid())
+
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  handshakeId  Int
+  handshake    PayoutHandshake @relation(fields: [handshakeId], references: [id], onDelete: Cascade)
+
+  endpoint     String
+  ipAddress    String
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, endpoint])
+  @@index([tenantId, handshakeId])
+}
+
+model DeadLetterQueue {
+  id            String   @id @default(uuid())
+
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  eventId       String
+  eventType     String
+
+  // Store full webhook payload for later replay/debug.
+  payload       Json
+
+  callbackUrl   String
+  ipAddress     String
+  attempts      Int
+
+  failureReason String
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, eventType])
+  @@index([tenantId, eventId])
+}
+
+
+
+
+
+
+
+
+
