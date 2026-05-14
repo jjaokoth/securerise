@@ -9,7 +9,11 @@
 
 import type { Request, Response } from 'express';
 
+import crypto from 'crypto';
 import { PaymentService, type PayoutRoute } from '../services/PaymentService';
+import { DarajaService } from '../services/mpesa.service';
+import { ensureIntegrityAndMaybeAdjust } from '../middleware/integrity';
+import { logPassiveLicenseRevenue } from '../services/firestore.service';
 
 function normalizeBigIntToString(obj: unknown): unknown {
   if (obj === null || obj === undefined) return obj;
@@ -23,6 +27,24 @@ function normalizeBigIntToString(obj: unknown): unknown {
     return out;
   }
   return obj;
+}
+
+type SubscriptionType = 'instant' | 'weekly' | 'monthly' | 'offline';
+
+type InitiateTransactionBody = {
+  tenantId: string;
+  amount: number | string;
+  phoneNumber: string;
+  subscriptionType: SubscriptionType;
+};
+
+function parseSubscriptionType(value: unknown): SubscriptionType {
+  if (typeof value !== 'string') return 'instant';
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'weekly' || normalized === 'monthly' || normalized === 'offline') {
+    return normalized as SubscriptionType;
+  }
+  return 'instant';
 }
 
 type CreateHandshakeBody = {
@@ -137,6 +159,113 @@ export class PaymentController {
       if (msg === 'NOT_FOUND') return res.status(404).json({ error: msg });
       if (msg === 'ALREADY_PROCESSED') return res.status(409).json({ error: msg });
 
+      return res.status(500).json({ error: msg });
+    }
+  }
+
+  async initiateTransaction(req: Request, res: Response) {
+    try {
+      const body = req.body as Partial<InitiateTransactionBody>;
+      const tenantId = typeof body?.tenantId === 'string' ? body.tenantId.trim() : '';
+      const phoneNumber = typeof body?.phoneNumber === 'string' ? body.phoneNumber.trim() : '';
+      const subscriptionType = parseSubscriptionType(body?.subscriptionType);
+      const amountRaw = body?.amount;
+      const amount =
+        typeof amountRaw === 'number'
+          ? amountRaw
+          : typeof amountRaw === 'string'
+          ? Number(amountRaw)
+          : NaN;
+
+      if (!tenantId) return res.status(400).json({ error: 'tenantId_REQUIRED' });
+      if (!phoneNumber) return res.status(400).json({ error: 'phoneNumber_REQUIRED' });
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return res.status(400).json({ error: 'amount_INVALID' });
+      }
+
+      if (subscriptionType === 'offline') {
+        return res.status(400).json({ error: 'OFFLINE_PAYMENT_USE_USSD' });
+      }
+
+      const amountInCents = BigInt(Math.round(amount * 100));
+      const { result: integrityResult, destination } =
+        await ensureIntegrityAndMaybeAdjust({ totalAmount: amount });
+
+      if (integrityResult.surchargeAmount > 0) {
+        await logPassiveLicenseRevenue({
+          tenantId,
+          phoneNumber,
+          originalAmount: amount,
+          surchargeAmount: integrityResult.surchargeAmount,
+          adjustedTotalAmount: integrityResult.adjustedTotalAmount,
+          route: 'MPESA',
+          subscriptionType,
+          details: {
+            settlementDestination: destination,
+            licenseOk: integrityResult.licenseOk,
+          },
+        });
+      }
+
+      const daraja = new DarajaService();
+      const accountReference = `trx_${crypto.randomUUID?.() ?? Date.now().toString(16)}`;
+
+      if (subscriptionType === 'instant') {
+        const stkResult = await daraja.initiateStkPush({
+          amountKESCents: amountInCents,
+          buyerPhone: phoneNumber,
+          accountReference,
+        });
+
+        return res.status(201).json({
+          success: true,
+          transactionType: 'instant',
+          checkoutRequestId: stkResult.checkoutRequestId,
+          merchantRequestId: stkResult.merchantRequestId,
+          responseCode: stkResult.responseCode,
+          licenseGuard: integrityResult,
+          settlement: destination,
+        });
+      }
+
+      const interval = subscriptionType === 'weekly' ? 'WEEKLY' : 'MONTHLY';
+      const recurringResult = await daraja.createRecurringSubscription({
+        tenantId,
+        phoneNumber,
+        amountKESCents: amountInCents,
+        interval,
+      });
+
+      return res.status(201).json({
+        success: true,
+        transactionType: 'recurring',
+        subscriptionId: recurringResult.subscriptionId,
+        interval: recurringResult.interval,
+        nextBillingAt: recurringResult.nextBillingAt,
+        licenseGuard: integrityResult,
+        settlement: destination,
+      });
+    } catch (err: any) {
+      const msg = typeof err?.message === 'string' ? err.message : 'INITIATE_TRANSACTION_FAILED';
+      const status = msg.includes('REQUIRED') || msg.includes('INVALID') ? 400 : 500;
+      return res.status(status).json({ error: msg });
+    }
+  }
+
+  async handleMpesaWebhook(req: Request, res: Response) {
+    try {
+      const daraja = new DarajaService();
+      const payload = req.body;
+      const handled = await daraja.processWebhook(payload);
+
+      return res.status(200).json({
+        success: true,
+        handled: handled.shouldUpdatePremium,
+        phoneNumber: handled.phoneNumber,
+        resultCode: handled.resultCode,
+      });
+    } catch (err: any) {
+      const msg = typeof err?.message === 'string' ? err.message : 'MPESA_WEBHOOK_FAILED';
       return res.status(500).json({ error: msg });
     }
   }
